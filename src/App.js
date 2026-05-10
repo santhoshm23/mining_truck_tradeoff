@@ -232,6 +232,56 @@ function exportToXLSX(sheetsData,filename){
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// ─── GANTT CHART ───────────────────────────────────────────────────────
+function GanttChart({data,onReorder}){
+  const[dragIdx,setDragIdx]=useState(null);
+  const[dragOver,setDragOver]=useState(null);
+  if(!data||!data.length)return(<p style={{color:P.txD,fontSize:12,fontFamily:ff}}>No periods to display.</p>);
+  const totalDays=data.reduce((s,p)=>s+(Number(p.days)||91),0)||1;
+  const maxMined=Math.max(1,...data.map(p=>Number(p.totalMined)||0));
+  const isDraggable=!!onReorder;
+  return(
+    <div style={{userSelect:"none"}}>
+      {isDraggable&&<div style={{fontSize:11,color:P.txD,marginBottom:10,fontFamily:ff}}>⠿ Drag bars left or right to reorder periods · bar width proportional to days</div>}
+      <div style={{display:"flex",gap:4,alignItems:"stretch",minHeight:120,overflowX:"auto",paddingBottom:4}}>
+        {data.map((p,i)=>{
+          const days=Number(p.days)||91;
+          const wPct=Math.max(4,days/totalDays*100);
+          const fill=maxMined>0?(Number(p.totalMined)||0)/maxMined:0;
+          const color=mClr[i%mClr.length];
+          const isDragging=dragIdx===i;
+          const isOver=dragOver===i&&dragIdx!==i;
+          return(
+            <div key={i}
+              draggable={isDraggable}
+              onDragStart={isDraggable?e=>{e.dataTransfer.effectAllowed="move";setDragIdx(i)}:undefined}
+              onDragOver={isDraggable?e=>{e.preventDefault();if(dragOver!==i)setDragOver(i)}:undefined}
+              onDrop={isDraggable?()=>{if(dragIdx!==null&&dragIdx!==i)onReorder(dragIdx,i);setDragIdx(null);setDragOver(null)}:undefined}
+              onDragEnd={isDraggable?()=>{setDragIdx(null);setDragOver(null)}:undefined}
+              style={{flex:`${wPct} 1 0`,minWidth:60,cursor:isDraggable?"grab":"default",opacity:isDragging?0.25:1,transition:"opacity 0.15s",position:"relative"}}>
+              {isOver&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:P.pri,borderRadius:2,zIndex:10}}/>}
+              <div style={{height:"100%",minHeight:110,background:isOver?P.blBg:color+"12",border:`2px solid ${isOver?P.pri:color+"88"}`,borderRadius:9,padding:"10px 8px",position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+                <div style={{position:"absolute",bottom:0,left:0,right:0,height:`${fill*75}%`,background:color+"28",transition:"height 0.4s"}}/>
+                <div style={{position:"relative",zIndex:1}}>
+                  <div style={{fontWeight:700,fontSize:12,color,fontFamily:ff,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.periodLabel||`P${i+1}`}</div>
+                  <div style={{fontSize:10,color:P.txD,marginTop:2,fontFamily:mf}}>{days}d</div>
+                </div>
+                <div style={{position:"relative",zIndex:1}}>
+                  {(Number(p.totalMined)||0)>0&&<div style={{fontSize:11,color:P.tx,fontFamily:mf,fontWeight:600,whiteSpace:"nowrap"}}>{fmtInt(Number(p.totalMined))}t</div>}
+                  {(Number(p.oreMined)||0)>0&&<div style={{fontSize:10,color:P.gn,fontFamily:mf,whiteSpace:"nowrap"}}>{fmtInt(Number(p.oreMined))} ore</div>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:4,marginTop:5}}>
+        {data.map((p,i)=>{const wPct=Math.max(4,(Number(p.days)||91)/totalDays*100);return<div key={i} style={{flex:`${wPct} 1 0`,minWidth:60,height:5,background:mClr[i%mClr.length]+"55",borderRadius:3}}/>;} )}
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   // ─── GLOBAL STATE ──────────────────────────────────────────────────
   const [page,setPage]=useState("scenarios");
@@ -251,6 +301,7 @@ export default function App(){
   const togGrp=(g)=>setCollGrp(p=>{const n=Object.assign({},p);n[g]=!n[g];return n});
   const [testPeriodIdx,setTestPeriodIdx]=useState(0);
   const [testFleetIdx,setTestFleetIdx]=useState(0);
+  const [ganttView,setGanttView]=useState(false);
   const [hiddenSeries,setHiddenSeries]=useState({});
   const togSeries=(k)=>setHiddenSeries(function(p){var n=Object.assign({},p);n[k]=!n[k];return n});
   const isVis=(k)=>!hiddenSeries[k];
@@ -362,6 +413,7 @@ export default function App(){
   const updFleet=(i,k,v)=>setFleets(p=>{const n=[...p];n[i]={...n[i],[k]:v};return n});
   const updMapping=(si,fi,fk,v)=>updScn(s=>{const m=[...s.fieldMappings];m[si]={...m[si],fields:{...m[si].fields,[fk]:v}};return{...s,fieldMappings:m}});
   const addManP=()=>updScn(s=>({...s,manualData:[...s.manualData,{period:s.manualData.length+1,periodLabel:`P${s.manualData.length+1}`,days:91,hours:2184,oreMined:0,wasteMined:0,totalMined:0,totalRampMined:0,avgLoadedTravelTime:10,avgUnloadedTravelTime:8,avgTkphDelay:0,avgNetPower:150,oreFePct:0,oreSiPct:0,oreAlPct:0,orePPct:0}]}));
+  const reorderGanttPeriods=(from,to)=>updScn(s=>{const d=[...s.manualData];const[item]=d.splice(from,1);d.splice(to,0,item);return{...s,manualData:d}});
   const updManP=(i,k,v)=>updScn(s=>{const d=[...s.manualData];d[i]={...d[i],[k]:v};if(k==="oreMined"||k==="wasteMined"){d[i].totalMined=(d[i].oreMined||0)+(d[i].wasteMined||0);d[i].totalRampMined=d[i].totalMined}if(k==="days")d[i].hours=v*24;return{...s,manualData:d}});
   const toggleFleetInScn=(fid)=>updScn(s=>{const ids=s.activeFleetIds.includes(fid)?s.activeFleetIds.filter(x=>x!==fid):[...s.activeFleetIds,fid];return{...s,activeFleetIds:ids}});
 
@@ -378,7 +430,7 @@ export default function App(){
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 
       {/* HEADER */}
-      <div style={{background:P.hdr,padding:"12px 32px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div className="no-print" style={{background:P.hdr,padding:"12px 32px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           <div style={{width:36,height:36,borderRadius:9,background:"linear-gradient(135deg,#1d4ed8,#3b82f6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>⛏️</div>
           <div><h1 style={{margin:0,fontSize:17,fontWeight:700,color:P.hdrTx}}>Mining Fleet Cost Engine</h1><p style={{margin:0,color:"#9ca3af",fontSize:11}}>Scenario Manager · Multi-Fleet · Field Mapping</p></div>
@@ -388,6 +440,7 @@ export default function App(){
           <select value={activeScnIdx} onChange={e=>setActiveScnIdx(parseInt(e.target.value))} style={{padding:"6px 14px",background:"#1f2937",border:"1px solid #374151",borderRadius:6,color:"#60a5fa",fontFamily:ff,fontSize:13,fontWeight:700}}>
             {scenarios.map((s,i)=><option key={i} value={i}>{s.name}</option>)}
           </select>
+          <button onClick={()=>window.print()} style={{padding:"6px 14px",background:"transparent",border:"1px solid #374151",borderRadius:6,color:"#9ca3af",fontFamily:ff,fontSize:12,cursor:"pointer",fontWeight:500,letterSpacing:0.2}}>🖨️ Print</button>
           {totals.c>0&&(<>
             <div style={{textAlign:"right"}}><div style={{color:"#9ca3af",fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>$/Tonne</div><div style={{color:"#60a5fa",fontSize:20,fontWeight:800,fontFamily:mf}}>{fmtC2(totals.cpt)}</div></div>
             <div style={{width:1,height:32,background:"#374151"}}/>
@@ -398,11 +451,11 @@ export default function App(){
       </div>
 
       {/* NAV Level 1 - Groups */}
-      <div style={{display:"flex",padding:"0 32px",background:"#1f2937",overflowX:"auto"}}>
+      <div className="no-print" style={{display:"flex",padding:"0 32px",background:"#1f2937",overflowX:"auto"}}>
         {navGroups.map(g=>{const isA=g===activeGroup;return(<button key={g.label} onClick={()=>setPage(g.items[0].id)} style={{padding:"10px 24px",background:isA?"rgba(255,255,255,0.08)":"transparent",border:"none",borderBottom:isA?"2px solid #60a5fa":"2px solid transparent",color:isA?"#f0f1f4":"#9ca3af",fontFamily:ff,fontSize:13,fontWeight:isA?700:500,cursor:"pointer",whiteSpace:"nowrap",letterSpacing:0.2}}>{g.label}</button>)})}
       </div>
       {/* NAV Level 2 - Pages */}
-      <div style={{display:"flex",padding:"0 32px",background:P.card,borderBottom:"1px solid "+P.bd,overflowX:"auto"}}>
+      <div className="no-print" style={{display:"flex",padding:"0 32px",background:P.card,borderBottom:"1px solid "+P.bd,overflowX:"auto"}}>
         {activeGroup.items.map(n=>(<button key={n.id} onClick={()=>setPage(n.id)} style={{padding:"11px 20px",background:"transparent",border:"none",borderBottom:page===n.id?"3px solid "+P.pri:"3px solid transparent",color:page===n.id?P.pri:P.txD,fontFamily:ff,fontSize:12,fontWeight:page===n.id?700:500,cursor:"pointer",whiteSpace:"nowrap"}}><span style={{marginRight:6}}>{n.icon}</span>{n.label}</button>))}
       </div>
 
@@ -487,8 +540,25 @@ export default function App(){
             {scn.csvData&&<p style={{color:P.gn,fontSize:12,marginTop:8,fontWeight:600}}>✓ {scn.csvData.np} periods · {scn.csvRawLabels.length} rows detected. Configure field mappings in the Field Mapping tab.</p>}
           </div>
 
+          {/* View Toggle */}
+          <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+            <Btn onClick={()=>setGanttView(false)} solid={!ganttView} small color={!ganttView?P.pri:P.txD}>📋 Table</Btn>
+            <Btn onClick={()=>setGanttView(true)} solid={ganttView} small color={ganttView?P.pri:P.txD}>📊 Gantt</Btn>
+          </div>
+
+          {/* Gantt View */}
+          {ganttView&&(<div style={{...cardS,padding:20,marginBottom:18}}>
+            <GanttChart
+              data={scn.csvData
+                ?Array.from({length:scn.csvData.np},(_,i)=>{const m=scn.fieldMappings[0];return{periodLabel:scn.csvData.gs("Period",i)||`P${i+1}`,days:scn.csvData.gv("Days",i)||91,totalMined:m?.fields?.totalMined?scn.csvData.gv(m.fields.totalMined,i):0,oreMined:m?.fields?.oreMined?scn.csvData.gv(m.fields.oreMined,i):0};})
+                :scn.manualData}
+              onReorder={scn.csvData?null:reorderGanttPeriods}
+            />
+            {!scn.csvData&&<div style={{marginTop:14}}><Btn onClick={addManP} solid>+ Add Period</Btn></div>}
+          </div>)}
+
           {/* CSV Preview Table */}
-          {scn.csvData&&(<div>
+          {!ganttView&&scn.csvData&&(<div>
             <ST icon="📋">Imported Data Preview</ST>
             <div style={{...cardS,overflowX:"auto",maxHeight:500,overflowY:"auto"}}>
               <table style={{borderCollapse:"collapse",fontFamily:mf,fontSize:11,width:"100%"}}>
@@ -507,7 +577,7 @@ export default function App(){
           </div>)}
 
           {/* Manual Entry Table */}
-          {!scn.csvData&&(<div>
+          {!ganttView&&!scn.csvData&&(<div>
             <ST icon="✏️">Manual Schedule Entry</ST>
             <div style={{...cardS,overflowX:"auto"}}><table style={{borderCollapse:"collapse",fontFamily:ff,fontSize:12,width:"100%"}}>
               <thead><tr style={{background:P.secBg,borderBottom:"2px solid "+P.bdS}}>
